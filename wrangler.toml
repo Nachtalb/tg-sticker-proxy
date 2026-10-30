@@ -1,0 +1,5 @@
+name = "tg-sticker-proxy"
+main = "src/index.ts"
+compatibility_date = "2025-10-01"
+workers_dev = true
+routes = [{ pattern = "s.naa.gg", custom_domain = true }]
