@@ -1,5 +1,11 @@
 # tg-sticker-proxy
 
+[![CI](https://github.com/Nachtalb/tg-sticker-proxy/actions/workflows/ci.yml/badge.svg)](https://github.com/Nachtalb/tg-sticker-proxy/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/github/license/Nachtalb/tg-sticker-proxy)](LICENSE)
+[![Live](https://img.shields.io/website?url=https%3A%2F%2Fs.naa.gg&label=s.naa.gg)](https://s.naa.gg)
+[![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare&logoColor=white)](https://workers.cloudflare.com)
+[![Bun](https://img.shields.io/badge/Bun-1.4-000?logo=bun&logoColor=white)](https://bun.sh)
+
 Cloudflare Worker that proxies Telegram sticker packs through the Bot API.
 Stickers live only in the Cloudflare edge cache; Workers KV keeps a small summary of
 every pack served so far for `/packs.json`. Live at <https://s.naa.gg>.
@@ -69,8 +75,17 @@ the worker.
 
 ```sh
 bun install
+bun run lint        # Biome
+bun run typecheck   # tsc
 bun test
 npx wrangler secret put BOT_TOKEN        # once
 npx wrangler kv namespace create PACKS   # once, id goes into wrangler.toml
 npx wrangler deploy
 ```
+
+TGS stickers are passed through as Lottie. To turn them into animated WebP or GIF yourself,
+[ThorVG](https://github.com/thorvg/thorvg) renders Lottie (and SVG) and has a WebAssembly build.
+
+## License
+
+[MIT](LICENSE) © Nachtalb
