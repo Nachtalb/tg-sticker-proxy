@@ -55,8 +55,8 @@ beforeEach(() => {
       if (tgResponse.ok) return Response.json({ ok: true, result: { VidPack: VIDEO, TgsPack: TGS }[name!] ?? tgResponse.result });
       return Response.json(tgResponse);
     }
-    if (u.includes("/getFile")) return Response.json({ ok: true, result: { file_path: "stickers/file_1.webm" } });
-    if (u.includes("/file/bot")) return new Response("bytes");
+    if (u.includes("/getFile")) return Response.json({ ok: true, result: { file_path: "stickers/file_1.tgs" } });
+    if (u.includes("/file/bot")) return new Response(Bun.gzipSync(new TextEncoder().encode('{"v":"5"}')));
     throw new Error("unexpected " + u);
   }) as any;
 });
@@ -114,6 +114,7 @@ test("file with wrong extension is 404", async () => {
   expect((await get("/TestPack/AgAD2.webm")).status).toBe(404);
   expect((await get("/TestPack/AgAD-1.json")).status).toBe(404);
   expect((await get("/TestPack/AgAD-1.tgs")).status).toBe(404);
+  expect((await get("/TestPack/AgAD-1.png")).status).toBe(404);
   expect((await get("/TestPack/missing.webp")).status).toBe(404);
 });
 
@@ -123,14 +124,16 @@ test("webm file", async () => {
   expect(r.headers.get("cache-control")).toContain("immutable");
 });
 
-test("tgs packs are 415 everywhere and not listed", async () => {
-  for (const p of ["/TgsPack.json", "/TgsPack/thumb", "/TgsPack/AgAD-1.webp", "/TgsPack/AgAD-1/thumb", "/TgsPack/AgAD-1"]) {
-    const r = await get(p);
-    expect(r.status).toBe(415);
-    expect(await r.json()).toEqual({ error: "animated (TGS) sticker packs are not supported" });
-  }
+test("tgs file, lottie json and share page", async () => {
+  expect(((await (await get("/TgsPack.json")).json()) as any).format).toBe("tgs");
+  const r = await get("/TgsPack/AgAD-1.tgs");
+  expect(r.headers.get("content-type")).toBe("application/x-tgsticker");
+  expect(r.headers.get("cache-control")).toContain("immutable");
+  expect(await (await get("/TgsPack/AgAD-1.json")).json()).toEqual({ v: "5" });
+  expect(await (await get("/TgsPack/AgAD-1")).text()).toContain('path:"https://s.example/TgsPack/AgAD-1.json"');
   await settle();
-  expect(env.PACKS.writes).toBe(0);
+  const j: any = await (await get("/packs.json")).json();
+  expect(j.map((p: any) => [p.name, p.format])).toEqual([["TgsPack", "tgs"]]);
 });
 
 test("packs list: newest first, one write per new or changed pack", async () => {

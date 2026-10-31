@@ -20,14 +20,15 @@ const SET = "([A-Za-z0-9_]{1,64})";
 const ID = "([A-Za-z0-9_-]{1,64})";
 const ROUTES: [RegExp, string][] = [
   [new RegExp(`^/${SET}\\.json$`), "set"],
-  [new RegExp(`^/${SET}/thumb(?:\\.(?:webp|jpg|webm))?$`), "setthumb"],
-  [new RegExp(`^/${SET}/${ID}/(thumb|premium)(?:\\.(?:webp|jpg|webm))?$`), "sub"],
-  [new RegExp(`^/${SET}/${ID}\\.(webp|webm)$`), "file"],
+  [new RegExp(`^/${SET}/thumb(?:\\.(?:webp|jpg|tgs|webm))?$`), "setthumb"],
+  [new RegExp(`^/${SET}/${ID}/(thumb|premium)(?:\\.(?:webp|jpg|tgs|webm))?$`), "sub"],
+  [new RegExp(`^/${SET}/${ID}\\.(webp|tgs|webm|json)$`), "file"],
   [new RegExp(`^/${SET}/${ID}$`), "page"],
 ];
 
 const MIME: Record<string, string> = {
   webp: "image/webp",
+  tgs: "application/x-tgsticker",
   webm: "video/webm",
   jpg: "image/jpeg",
   png: "image/png",
@@ -41,12 +42,11 @@ const USAGE = `Telegram sticker proxy
 GET /packs.json                 known packs, newest first
 GET /<set>.json                 pack info + stickers
 GET /<set>/thumb                pack thumbnail
-GET /<set>/<id>.<webp|webm>     sticker file (id = file_unique_id)
+GET /<set>/<id>.<webp|tgs|webm> sticker file (id = file_unique_id)
+GET /<set>/<id>.json            TGS sticker as Lottie JSON
 GET /<set>/<id>/thumb           sticker thumbnail
 GET /<set>/<id>/premium         premium animation (if any)
 GET /<set>/<id>                 share page
-
-Animated (TGS) packs are not supported.
 `;
 
 class HttpError extends Error {
@@ -83,9 +83,10 @@ async function tg(env: Env, method: string, params: Record<string, string>): Pro
   throw new HttpError(502, "telegram error");
 }
 
-// Cache API wrapper: returns cached response or builds, stores and returns a fresh one.
 // bump to drop everything cached by older deployments
 const CACHE_VERSION = "2";
+
+// Cache API wrapper: returns cached response or builds, stores and returns a fresh one.
 
 async function cached(key: string, ctx: Ctx, build: () => Promise<Response>): Promise<Response> {
   key += `?v=${CACHE_VERSION}`;
@@ -105,14 +106,12 @@ async function cached(key: string, ctx: Ctx, build: () => Promise<Response>): Pr
 async function rawSet(env: Env, ctx: Ctx, origin: string, name: string): Promise<Tg> {
   const res = await cached(`${origin}/__raw/${name.toLowerCase()}`, ctx, async () => {
     const set = await tg(env, "getStickerSet", { name });
-    if (formatOf(set.stickers[0] ?? {}) !== "tgs") ctx.waitUntil(remember(env, summary(set, origin)));
+    ctx.waitUntil(remember(env, summary(set, origin)));
     return new Response(JSON.stringify(set), {
       headers: { "Content-Type": "application/json", "Cache-Control": "public, max-age=3600" },
     });
   });
-  const set: Tg = await res.json();
-  if (formatOf(set.stickers[0] ?? {}) === "tgs") throw new HttpError(415, "animated (TGS) sticker packs are not supported");
-  return set;
+  return res.json();
 }
 
 export function summary(set: Tg, origin: string) {
@@ -222,13 +221,15 @@ export function page(set: ReturnType<typeof shapeSet>, s: ReturnType<typeof shap
   const media =
     s.format === "webm"
       ? `<video src="${esc(s.url)}" autoplay loop muted playsinline></video>`
-      : `<img src="${esc(s.url)}" alt="${esc(s.emoji ?? "sticker")}">`;
+      : s.format === "tgs"
+        ? `<div id="l"></div><script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script><script>lottie.loadAnimation({container:document.getElementById("l"),renderer:"svg",loop:true,autoplay:true,path:${JSON.stringify(s.url.replace(/\.tgs$/, ".json"))}})</script>`
+        : `<img src="${esc(s.url)}" alt="${esc(s.emoji ?? "sticker")}">`;
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)}</title>
 <meta property="og:title" content="${esc(title)}"><meta property="og:description" content="Sticker from ${esc(set.title)}">
 <meta property="og:image" content="${esc(image)}"><meta property="og:type" content="website">
 <meta name="twitter:card" content="summary"><meta name="twitter:image" content="${esc(image)}">
-<style>body{margin:0;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#17191c;color:#ddd;font:16px system-ui,sans-serif}img,video{width:256px;height:256px;object-fit:contain}p{margin:.5em}a{color:#6cb6ff}</style>
+<style>body{margin:0;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#17191c;color:#ddd;font:16px system-ui,sans-serif}img,video,#l{width:256px;height:256px;object-fit:contain}p{margin:.5em}a{color:#6cb6ff}</style>
 </head><body>${media}<p style="font-size:2em">${esc(s.emoji ?? "")}</p><p><a href="${esc(set.link)}">${esc(set.title)}</a></p></body></html>`;
 }
 
@@ -243,7 +244,7 @@ async function route(req: Request, env: Env, ctx: Ctx): Promise<Response> {
     );
 
   if (pathname === "/packs.json")
-    return cached(key, ctx, async () => json(await packs(env), 200, { "Cache-Control": "public, max-age=60" }));
+    return cached(key, ctx, async () => json(await packs(env), 200, { "Cache-Control": "public, max-age=60, stale-while-revalidate=60" }));
 
   for (const [re, kind] of ROUTES) {
     const m = pathname.match(re);
@@ -277,6 +278,14 @@ async function route(req: Request, env: Env, ctx: Ctx): Promise<Response> {
       return cached(key, ctx, async () => {
         const s = find(await rawSet(env, ctx, origin, name), id);
         const fmt = formatOf(s);
+        if (arg === "json") {
+          if (fmt !== "tgs") throw new HttpError(404, "lottie json only exists for tgs stickers");
+          const tgs = await route(new Request(key.replace(/\.json$/, ".tgs")), env, ctx);
+          if (!tgs.ok) return tgs;
+          return new Response(tgs.body!.pipeThrough(new DecompressionStream("gzip")), {
+            headers: { "Content-Type": "application/json", "Cache-Control": FOREVER, ...cors },
+          });
+        }
         if (fmt !== arg) throw new HttpError(404, `sticker is ${fmt}, not ${arg}`);
         return download(env, s.file_id, MIME[fmt]);
       });
