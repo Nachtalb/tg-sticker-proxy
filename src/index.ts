@@ -84,7 +84,7 @@ async function tg(env: Env, method: string, params: Record<string, string>): Pro
 }
 
 // bump to drop everything cached by older deployments
-const CACHE_VERSION = "2";
+const CACHE_VERSION = "3";
 
 // Cache API wrapper: returns cached response or builds, stores and returns a fresh one.
 
