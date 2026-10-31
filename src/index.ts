@@ -84,7 +84,11 @@ async function tg(env: Env, method: string, params: Record<string, string>): Pro
 }
 
 // Cache API wrapper: returns cached response or builds, stores and returns a fresh one.
+// bump to drop everything cached by older deployments
+const CACHE_VERSION = "2";
+
 async function cached(key: string, ctx: Ctx, build: () => Promise<Response>): Promise<Response> {
+  key += `?v=${CACHE_VERSION}`;
   const cache = (globalThis as any).caches?.default as Cache | undefined;
   const hit = await cache?.match(key);
   if (hit) {
