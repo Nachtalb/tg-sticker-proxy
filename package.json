@@ -1,6 +1,9 @@
 {
   "name": "tg-sticker-proxy",
   "private": true,
+  "license": "MIT",
+  "author": "Nachtalb <na@nachtalb.io>",
+  "repository": "github:Nachtalb/tg-sticker-proxy",
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
