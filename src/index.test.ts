@@ -7,15 +7,47 @@ const SET = {
   sticker_type: "regular",
   thumbnail: { file_id: "setthumb", file_unique_id: "st", width: 100, height: 100 },
   stickers: [
-    { file_id: "f1", file_unique_id: "AgAD-1", type: "regular", is_animated: false, is_video: false, width: 512, height: 512, emoji: "😀", file_size: 10, thumbnail: { file_id: "t1", width: 128, height: 128 } },
-    { file_id: "f2", file_unique_id: "AgAD2", type: "regular", is_animated: false, is_video: false, width: 512, height: 512, emoji: "🔥" },
+    {
+      file_id: "f1",
+      file_unique_id: "AgAD-1",
+      type: "regular",
+      is_animated: false,
+      is_video: false,
+      width: 512,
+      height: 512,
+      emoji: "😀",
+      file_size: 10,
+      thumbnail: { file_id: "t1", width: 128, height: 128 },
+    },
+    {
+      file_id: "f2",
+      file_unique_id: "AgAD2",
+      type: "regular",
+      is_animated: false,
+      is_video: false,
+      width: 512,
+      height: 512,
+      emoji: "🔥",
+    },
   ],
 };
 const VIDEO = {
   ...SET,
   name: "VidPack",
   thumbnail: undefined,
-  stickers: [{ file_id: "f3", file_unique_id: "AgAD3", type: "regular", is_animated: false, is_video: true, width: 512, height: 512, emoji: "🎬", thumbnail: { file_id: "t3" } }],
+  stickers: [
+    {
+      file_id: "f3",
+      file_unique_id: "AgAD3",
+      type: "regular",
+      is_animated: false,
+      is_video: true,
+      width: 512,
+      height: 512,
+      emoji: "🎬",
+      thumbnail: { file_id: "t3" },
+    },
+  ],
 };
 const TGS = { ...SET, name: "TgsPack", stickers: [{ ...SET.stickers[0], is_animated: true }] };
 
@@ -31,7 +63,10 @@ class FakeKV {
     this.m.set(k, { value, metadata: o.metadata });
   }
   async list({ prefix = "" } = {}) {
-    const keys = [...this.m].filter(([k]) => k.startsWith(prefix)).sort().map(([name, e]) => ({ name, metadata: e.metadata }));
+    const keys = [...this.m]
+      .filter(([k]) => k.startsWith(prefix))
+      .sort()
+      .map(([name, e]) => ({ name, metadata: e.metadata }));
     return { keys, list_complete: true };
   }
 }
@@ -52,16 +87,17 @@ beforeEach(() => {
     calls.push(u);
     if (u.includes("/getStickerSet")) {
       const name = new URL(u).searchParams.get("name");
-      if (tgResponse.ok) return Response.json({ ok: true, result: { VidPack: VIDEO, TgsPack: TGS }[name!] ?? tgResponse.result });
+      if (tgResponse.ok)
+        return Response.json({ ok: true, result: { VidPack: VIDEO, TgsPack: TGS }[name ?? ""] ?? tgResponse.result });
       return Response.json(tgResponse);
     }
     if (u.includes("/getFile")) return Response.json({ ok: true, result: { file_path: "stickers/file_1.tgs" } });
-    if (u.includes("/file/bot")) return new Response(Bun.gzipSync(new TextEncoder().encode('{"v":"5"}')));
-    throw new Error("unexpected " + u);
+    if (u.includes("/file/bot")) return new Response(Buffer.from(Bun.gzipSync('{"v":"5"}')));
+    throw new Error(`unexpected ${u}`);
   }) as any;
 });
 
-const get = (p: string) => worker.fetch(new Request("https://s.example" + p), env, ctx);
+const get = (p: string) => worker.fetch(new Request(`https://s.example${p}`), env, ctx);
 
 test("set json shape", async () => {
   const r = await get("/TestPack.json");
@@ -149,8 +185,13 @@ test("packs list: newest first, one write per new or changed pack", async () => 
   const j: any = await (await get("/packs.json")).json();
   expect(j.map((p: any) => p.name)).toEqual(["VidPack", "TestPack"]);
   expect(j[0]).toEqual({
-    name: "VidPack", title: "Test Pack", format: "webm", sticker_type: "regular",
-    link: "https://t.me/addstickers/VidPack", thumb_url: "https://s.example/VidPack/AgAD3/thumb", count: 1,
+    name: "VidPack",
+    title: "Test Pack",
+    format: "webm",
+    sticker_type: "regular",
+    link: "https://t.me/addstickers/VidPack",
+    thumb_url: "https://s.example/VidPack/AgAD3/thumb",
+    count: 1,
   });
   expect(j[1].thumb_url).toBe("https://s.example/TestPack/thumb");
   tgResponse = { ok: true, result: { ...SET, title: "Renamed" } };

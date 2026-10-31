@@ -6,7 +6,10 @@ export interface Env {
 interface KVNamespace {
   getWithMetadata<M>(key: string): Promise<{ value: string | null; metadata: M | null }>;
   put(key: string, value: string, opts?: { metadata?: unknown }): Promise<void>;
-  list<M>(opts?: { prefix?: string; cursor?: string }): Promise<{ keys: { name: string; metadata?: M }[]; list_complete: boolean; cursor?: string }>;
+  list<M>(opts?: {
+    prefix?: string;
+    cursor?: string;
+  }): Promise<{ keys: { name: string; metadata?: M }[]; list_complete: boolean; cursor?: string }>;
 }
 
 interface Ctx {
@@ -50,7 +53,11 @@ GET /<set>/<id>                 share page
 `;
 
 class HttpError extends Error {
-  constructor(public status: number, message: string, public retryAfter?: number) {
+  constructor(
+    public status: number,
+    message: string,
+    public retryAfter?: number,
+  ) {
     super(message);
   }
 }
@@ -76,7 +83,7 @@ async function tg(env: Env, method: string, params: Record<string, string>): Pro
   } catch {
     throw new HttpError(502, "telegram unreachable");
   }
-  const body: Tg = await res.json().catch(() => ({}));
+  const body = (await res.json().catch(() => ({}))) as Tg;
   if (body.ok) return body.result;
   if (body.error_code === 429) throw new HttpError(503, "rate limited", body.parameters?.retry_after ?? 30);
   if (method === "getStickerSet" && body.error_code === 400) throw new HttpError(404, "sticker set not found");
@@ -200,7 +207,7 @@ async function download(env: Env, fileId: string, type?: string): Promise<Respon
     throw new HttpError(502, "telegram unreachable");
   }
   if (!res.ok) throw new HttpError(502, "telegram error");
-  const ext = String(file_path).split(".").pop()!.toLowerCase();
+  const ext = (String(file_path).split(".").pop() ?? "").toLowerCase();
   return new Response(res.body, {
     headers: { "Content-Type": type ?? MIME[ext] ?? "application/octet-stream", "Cache-Control": FOREVER, ...cors },
   });
@@ -212,12 +219,11 @@ function find(set: Tg, id: string): Tg {
   return s;
 }
 
-const esc = (s: string) =>
-  String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+const esc = (s: string) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 export function page(set: ReturnType<typeof shapeSet>, s: ReturnType<typeof shapeSet>["stickers"][number]): string {
   const title = `${s.emoji ?? ""} ${set.title}`.trim();
-  const image = s.format === "webp" ? s.url : s.thumb_url ?? s.url;
+  const image = s.format === "webp" ? s.url : (s.thumb_url ?? s.url);
   const media =
     s.format === "webm"
       ? `<video src="${esc(s.url)}" autoplay loop muted playsinline></video>`
@@ -237,14 +243,17 @@ async function route(req: Request, env: Env, ctx: Ctx): Promise<Response> {
   const url = new URL(req.url);
   const { origin, pathname } = url;
   const key = origin + pathname;
-  if (pathname === "/") return new Response(USAGE, { headers: { "Content-Type": "text/plain; charset=utf-8", ...cors } });
+  if (pathname === "/")
+    return new Response(USAGE, { headers: { "Content-Type": "text/plain; charset=utf-8", ...cors } });
   if (pathname === "/_me")
     return cached(key, ctx, async () =>
       json({ username: (await tg(env, "getMe", {})).username }, 200, { "Cache-Control": SET_TTL }),
     );
 
   if (pathname === "/packs.json")
-    return cached(key, ctx, async () => json(await packs(env), 200, { "Cache-Control": "public, max-age=60, stale-while-revalidate=60" }));
+    return cached(key, ctx, async () =>
+      json(await packs(env), 200, { "Cache-Control": "public, max-age=60, stale-while-revalidate=60" }),
+    );
 
   for (const [re, kind] of ROUTES) {
     const m = pathname.match(re);
@@ -282,7 +291,7 @@ async function route(req: Request, env: Env, ctx: Ctx): Promise<Response> {
           if (fmt !== "tgs") throw new HttpError(404, "lottie json only exists for tgs stickers");
           const tgs = await route(new Request(key.replace(/\.json$/, ".tgs")), env, ctx);
           if (!tgs.ok) return tgs;
-          return new Response(tgs.body!.pipeThrough(new DecompressionStream("gzip")), {
+          return new Response(tgs.body?.pipeThrough(new DecompressionStream("gzip")), {
             headers: { "Content-Type": "application/json", "Cache-Control": FOREVER, ...cors },
           });
         }
