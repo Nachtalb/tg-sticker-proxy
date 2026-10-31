@@ -50,6 +50,8 @@ GET /<set>/<id>.json            TGS sticker as Lottie JSON
 GET /<set>/<id>/thumb           sticker thumbnail
 GET /<set>/<id>/premium         premium animation (if any)
 GET /<set>/<id>                 share page
+
+Source: https://github.com/Nachtalb/tg-sticker-proxy
 `;
 
 class HttpError extends Error {
